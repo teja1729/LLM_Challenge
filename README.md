@@ -1,6 +1,7 @@
 # LLM_Challenge
 
 # Project Repository
+These repository consists 3 submissions for neurips23 llm efficiency challenge  in Nvidia 4090 track
 
 This repository contains the project files organized as follows:
 
