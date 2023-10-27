@@ -25,7 +25,7 @@ def prompt_formatting(example:dict):
 #dolly
 dolly_15k = load_dataset("databricks/databricks-dolly-15k")
 instruct_dolly = dolly_15k.map(prompt_formatting)
-instruct_dolly = instruct_dolly['train'].map(lambda x: {'dataset':'dolly'})\
+instruct_dolly = instruct_dolly['train'].map(lambda x: {'dataset':'dolly'})
 #lima
 lima_dataset = load_dataset("GAIR/lima",use_auth_token = "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")
 def prepare_lima(dataset_dict: dict):
