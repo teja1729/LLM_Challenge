@@ -11,9 +11,9 @@ pydantic==2.4.2
 pydantic_core==2.10.1
 Pillow==9.4.0
 bitsandbytes==0.41.1
-einops
+einops==0.7.0
 uvicorn==0.23.2
-jieba
+jieba==0.42.1
 matplotlib==3.7.0
 matplotlib-inline==0.1.6
 scikit-image==0.19.3
