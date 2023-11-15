@@ -259,4 +259,4 @@ model = AutoPeftModelForCausalLM.from_pretrained(
     model_save_path,
 )
 tokenizer = AutoTokenizer.from_pretrained(model_save_path)
-model.push_to_hub(model_hf_name)
+model.push_to_hub(model_hf_name,token="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")
