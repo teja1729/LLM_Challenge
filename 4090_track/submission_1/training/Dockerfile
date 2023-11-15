@@ -5,10 +5,12 @@ RUN apt-get update && \
     apt-get install -y git git-lfs && \
     git lfs install
 
+
+RUN apt-get install -y python3 python3-pip
+
+RUN python3 --version 
+
 WORKDIR /train
 COPY . /train
 
 RUN pip install -r requirements.txt
-
-
-RUN echo "Docker build and training can be started!!"
