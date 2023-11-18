@@ -1,30 +1,29 @@
 # dataset preperation
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from datasets import load_dataset, Dataset
+import torch
+from datasets import Dataset, load_dataset
 
 
 def prompt_formatting(example: dict):
-    """
-    example.keys -- instruction ,context(optional),response
-    """
+    """example.keys -- instruction ,context(optional),response"""
     if example.get("context", "") != "":
         input_prompt = (
-            f"Below is an instruction that describes a task, paired with an input that provides further context. "
-            "Write a response that appropriately completes the request.\n\n"
-            "### Instruction:\n"
-            f"{example['instruction']}\n\n"
-            f"### Input: \n"
-            f"{example['context']}\n\n"
-            f"### Response:"
+            "Below is an instruction that describes a task, paired with an input that provides"
+            " further context. Write a response that appropriately completes the request.\n\n###"
+            f" Instruction:\n{example['instruction']}\n\n### Input: \n{example['context']}\n\n###"
+            " Response:"
         )
     else:
         input_prompt = (
-            f"Below is an instruction that describes a task. "
+            "Below is an instruction that describes a task. "
             "Write a response that appropriately completes the request.\n\n"
             "### Instruction:\n"
             f"{example['instruction']}\n\n"
-            f"### Response:"
+            "### Response:"
         )
     return {
         "input_prompt": input_prompt,
@@ -37,18 +36,14 @@ dolly_15k = load_dataset("databricks/databricks-dolly-15k")
 instruct_dolly = dolly_15k.map(prompt_formatting)
 instruct_dolly = instruct_dolly["train"].map(lambda x: {"dataset": "dolly"})
 # lima
-lima_dataset = load_dataset(
-    "GAIR/lima", use_auth_token="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"
-)
+lima_dataset = load_dataset("GAIR/lima", use_auth_token="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")
 
 
 def prepare_lima(dataset_dict: dict):
     formatted_dataset = []
     for dp in dataset_dict:
         convo = dp["conversations"]
-        formatted_dataset.append(
-            {"instruction": convo[0], "context": "", "response": convo[1]}
-        )
+        formatted_dataset.append({"instruction": convo[0], "context": "", "response": convo[1]})
     return formatted_dataset
 
 
@@ -161,21 +156,20 @@ for i in ["input_prompt", "input_output_prompt", "dataset"]:
 train_dataset = Dataset.from_pandas(merged_dataset)
 # val_dataset = Dataset.from_pandas(val_df)
 # training
+from peft import (
+    AutoPeftModelForCausalLM,
+    LoraConfig,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+)
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
+    TrainerCallback,
     TrainingArguments,
 )
-from peft import (
-    AutoPeftModelForCausalLM,
-    LoraConfig,
-    prepare_model_for_kbit_training,
-    get_peft_model,
-)
-
 from trl import SFTTrainer
-import torch
 
 model_name = "mistralai/Mistral-7B-v0.1"
 run_name = "models_output_last_4_layers_final_train"
@@ -210,6 +204,25 @@ lora_config = LoraConfig(
 model = prepare_model_for_kbit_training(model)
 model = get_peft_model(model, peft_config=lora_config)
 
+###### added for evaluation help
+if Path("/mnt/shared").exists():  # we're running on mzai infra
+    output_dir = Path("/mnt/shared/neurips_eval/" + run_name)
+
+    class PeftSavingCallback(TrainerCallback):
+        def on_save(self, args, state, control, **kwargs):
+            checkpoint_path = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
+            kwargs["model"].save_pretrained(checkpoint_path)
+
+            if "pytorch_model.bin" in os.listdir(checkpoint_path):
+                os.remove(os.path.join(checkpoint_path, "pytorch_model.bin"))
+
+    callbacks = [PeftSavingCallback()]
+else:
+    output_dir = run_name
+    callbacks = None
+###### end added for evaluation help
+
+
 training_args = TrainingArguments(
     per_device_train_batch_size=3,
     gradient_accumulation_steps=2,
@@ -225,13 +238,14 @@ training_args = TrainingArguments(
     num_train_epochs=6,
     # warmup_ratio= 0.03,
     log_level="info",
-    output_dir=run_name,
+    output_dir=output_dir,
     lr_scheduler_type="linear",
     # load_best_model_at_end=True
 )
 
 # from transformers import EarlyStoppingCallback
 # early_stopping = EarlyStoppingCallback(early_stopping_patience=3)
+
 
 trainer = SFTTrainer(
     model=model,
@@ -241,13 +255,13 @@ trainer = SFTTrainer(
     tokenizer=tokenizer,
     max_seq_length=2048,
     args=training_args,
-    # callbacks=[early_stopping],
+    callbacks=callbacks,
     peft_config=lora_config,
 )
 
+
 trainer.train()
 
-import os
 
 # path to save the trained weights
 model_save_path = os.path.join("outputs", run_name)

@@ -1,30 +1,26 @@
-import gc
-
-from fastapi import FastAPI
 import logging
 import time
+
 import torch
+from fastapi import FastAPI
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from transformers import BitsAndBytesConfig
 
 torch.set_float32_matmul_precision("high")
 
 from api import (
     ProcessRequest,
     ProcessResponse,
+    Token,
     TokenizeRequest,
     TokenizeResponse,
-    Token,
 )
 
 logger = logging.getLogger(__name__)
 # Configure the logging module
 logging.basicConfig(level=logging.INFO)
 model_name = "mistralai/Mistral-7B-v0.1"
-peft_model_id = "Supersaiyan1729/mistrail_28_31_final"
+peft_model_id = "binaryaaron/neurips-teja1729-llm-challenge"
 tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-
-
 
 
 # nf4_config = BitsAndBytesConfig(
@@ -34,7 +30,9 @@ tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 #    bnb_4bit_compute_dtype=torch.bfloat16
 # )
 
-model = AutoModelForCausalLM.from_pretrained(model_name,device_map = "auto",torch_dtype = torch.float16,trust_remote_code = True)#,quantization_config=nf4_config)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name, device_map="auto", torch_dtype=torch.float16, trust_remote_code=True
+)  # ,quantization_config=nf4_config)
 model.load_adapter(peft_model_id)
 model.eval()
 LLAMA2_CONTEXT_LENGTH = 4096
@@ -76,16 +74,14 @@ async def process_request(input_data: ProcessRequest) -> ProcessResponse:
         output = tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
     print(output)
     tokens_generated = outputs.sequences[0].size(0) - prompt_length
-    logger.info(
-        f"Time for inference: {t:.02f} sec total, {tokens_generated / t:.02f} tokens/sec"
-    )
+    logger.info(f"Time for inference: {t:.02f} sec total, {tokens_generated / t:.02f} tokens/sec")
 
     logger.info(f"Memory used: {torch.cuda.max_memory_reserved() / 1e9:.02f} GB")
     generated_tokens = []
 
     log_probs = torch.log(torch.stack(outputs.scores, dim=1).softmax(-1))
 
-    gen_sequences = outputs.sequences[:, encoded["input_ids"].shape[-1]:]
+    gen_sequences = outputs.sequences[:, encoded["input_ids"].shape[-1] :]
     gen_logprobs = torch.gather(log_probs, 2, gen_sequences[:, :, None]).squeeze(-1)
 
     top_indices = torch.argmax(log_probs, dim=-1)
@@ -93,13 +89,13 @@ async def process_request(input_data: ProcessRequest) -> ProcessResponse:
     top_indices = top_indices.tolist()[0]
     top_logprobs = top_logprobs.tolist()[0]
 
-    for t, lp, tlp in zip(gen_sequences.tolist()[0], gen_logprobs.tolist()[0], zip(top_indices, top_logprobs)):
+    for t, lp, tlp in zip(
+        gen_sequences.tolist()[0], gen_logprobs.tolist()[0], zip(top_indices, top_logprobs)
+    ):
         idx, val = tlp
         tok_str = tokenizer.decode(idx)
         token_tlp = {tok_str: val}
-        generated_tokens.append(
-            Token(text=tokenizer.decode(t), logprob=lp, top_logprob=token_tlp)
-        )
+        generated_tokens.append(Token(text=tokenizer.decode(t), logprob=lp, top_logprob=token_tlp))
     logprob_sum = gen_logprobs.sum().item()
 
     return ProcessResponse(
@@ -110,9 +106,7 @@ async def process_request(input_data: ProcessRequest) -> ProcessResponse:
 @app.post("/tokenize")
 async def tokenize(input_data: TokenizeRequest) -> TokenizeResponse:
     t0 = time.perf_counter()
-    encoded = tokenizer(
-        input_data.text
-    )
+    encoded = tokenizer(input_data.text)
     t = time.perf_counter() - t0
     tokens = encoded["input_ids"]
     return TokenizeResponse(tokens=tokens, request_time=t)
